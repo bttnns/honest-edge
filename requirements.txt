@@ -1,0 +1,15 @@
+# Convenience mirror of pyproject.toml's [project.dependencies].
+# Source of truth is pyproject.toml. Prefer `pip install -e .` (which also makes
+# the `honest_edge` package importable from the notebooks). Use this file only if
+# you want the deps without the editable install: `pip install -r requirements.txt`.
+numpy>=2.1
+pandas>=3.0
+scikit-learn>=1.5
+catboost>=1.2
+matplotlib>=3.9
+jupyter>=1.1
+nbconvert>=7.16
+ipykernel>=6.29
+
+# Apple-silicon only, optional (Section 7). Skipped automatically elsewhere:
+mlx>=0.20 ; platform_system == "Darwin" and platform_machine == "arm64"

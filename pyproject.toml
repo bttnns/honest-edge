@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "honest-edge"
+version = "0.1.0"
+description = "An expert-quant-teaches-a-beginner course: ML for trading, built honestly on SPY."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Brian Tannous" }]
+
+# Floor pins, not exact pins: encode the API we rely on without rotting fast.
+# pandas 3.0 (Jan 2026) is Copy-on-Write only; the code is written for that.
+dependencies = [
+    "numpy>=2.1",
+    "pandas>=3.0",
+    "scikit-learn>=1.5",
+    "catboost>=1.2",
+    "matplotlib>=3.9",
+    "jupyter>=1.1",
+    "nbconvert>=7.16",
+    "ipykernel>=6.29",
+]
+
+[project.optional-dependencies]
+# MLX is Apple-silicon only. The environment marker makes `pip install -e ".[mlx]"`
+# a no-op on Linux/Intel, so Sections 0-8 install and run anywhere; only the
+# MLX-net notebook (Section 7) needs this extra, run on an Apple-silicon host.
+mlx = ["mlx>=0.20; platform_system == 'Darwin' and platform_machine == 'arm64'"]
+
+[tool.setuptools]
+packages = ["honest_edge"]
+
+# Ship the SPY CSVs with the package so the notebooks load data after ANY install
+# (plain `pip install .` or editable), not just from a checkout of the repo.
+[tool.setuptools.package-data]
+honest_edge = ["data/*.csv"]

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+.virtual_documents/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Notebook build scripts (local authoring tools; the .ipynb is the shipped artifact)
+_build_*.py
+
+# NOTE: honest_edge/data/ is intentionally NOT ignored. The two SPY CSVs are part
+# of the lessons and are small, so we commit them (and ship them as package data)
+# to keep the repo self-contained.
