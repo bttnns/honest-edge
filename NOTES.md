@@ -120,6 +120,72 @@ the committed notebooks and library:
   accuracy unchanged at 54.06%).
 - Data moved into the package and shipped as package data, so `pip install .` works.
 
+## What the research predicts for Sections 4-9
+
+Before building the meta-labeling half of the course, we checked the planned arc
+against the literature. The short version: the research reinforces the plan, and
+the honest-verdict section (Deflated Sharpe) sits on the firmest ground of all.
+What each finding implies for our expected result:
+
+- **Meta-labeling refines an edge, it does not create one.** This is de Prado's own
+  framing (the secondary model trades recall for precision and sizes bets); the
+  proponents state the precondition plainly ("meta-labeling needs a good primary
+  algorithm... if the algorithm is bad it would likely only reduce the downside"),
+  and even critics agree it "makes sense only on top of an existing strategy."
+  Implication: our Section 3 rule must carry the edge; ML only filters it. Sources:
+  Lopez de Prado, *Advances in Financial Machine Learning* (Wiley, 2018), Ch. 3;
+  Singh & Joubert, "Does Meta-Labeling Add to Signal Efficacy?" (Hudson & Thames,
+  2019).
+
+- **The size of the gain is uncertain, the mechanism is not.** The reliable wins are
+  higher precision, fewer trades, and smaller drawdown; reported Sharpe gains range
+  from tiny to large (one replication shows Sharpe 0.36 to 0.83). So we will NOT
+  promise a big Sharpe jump; we frame the win as precision/turnover/drawdown.
+  Caveat worth stating to readers: nearly all "it works" evidence comes from one
+  research lineage (de Prado / Hudson & Thames) on large-sample futures data, not
+  independent small-sample replications.
+
+- **Our ~150 trades is a small sample, and that is the dominant risk.** A controlled
+  learning-curve study found ML overfitting is severe below N about 300 and does not
+  converge until N about 750-1,500 (Zantvoort et al., *npj Digital Medicine*, 2024).
+  Implication: Section 6's improvement will be high-variance and may not survive
+  out-of-sample. We report distributions across folds, not a single number.
+
+- **The neural net (Section 7) should not beat the tree.** Two peer-reviewed
+  benchmarks find gradient-boosted trees stay state-of-the-art on tabular data up to
+  about 10k samples, far above our few hundred (Grinsztajn et al., NeurIPS 2022,
+  "Why do tree-based models still outperform deep learning on typical tabular data?";
+  Shwartz-Ziv & Armon, *Information Fusion*, 2022, "Tabular Data: Deep Learning is
+  Not All You Need"). The MLX section is expected to confirm "extra capacity buys
+  little here," which is itself a teaching result.
+
+- **The Deflated Sharpe (Section 9) will likely be decisive, and this is our
+  best-supported prediction.** Harvey & Liu ("Evaluating Trading Strategies", *JPM*,
+  2014) show a Sharpe of 0.92 at t = 2.91 haircut by 91% once about 200 trials are
+  admitted; the new-factor hurdle is t > 3, not 2 (Harvey, Liu & Zhu, *RFS*, 2016).
+  Our rule's Sharpe of about 0.6 over 20 years is t approximately 0.6 * sqrt(20)
+  approximately 2.7, already under 3 before any multiple-testing penalty. Once we
+  count RSI thresholds, features, models, and horizons as trials, the honest verdict
+  is likely "not statistically distinguishable from zero." Formula and worked
+  examples: Bailey & Lopez de Prado, "The Deflated Sharpe Ratio" (*JPM*, 2014);
+  Bailey, Borwein, Lopez de Prado & Zhu, "Pseudo-Mathematics and Financial
+  Charlatanism" (*Notices of the AMS*, 2014).
+
+- **On the primary signal itself:** independent (mostly practitioner) backtests show
+  Connors RSI-2 on SPY is competitive on Sharpe with much smaller drawdown WHEN the
+  200-day filter is on (without it, drawdowns approach buy-and-hold's ~57%), and
+  clearly trails on compound return, matching our Section 3 read. The underlying
+  short-term-reversal anomaly is academically grounded as compensation for liquidity
+  provision that pays off in stress (Nagel, "Evaporating Liquidity", *RFS*, 2012),
+  and it has decayed since the 1990s as liquidity and arbitrage rose (Chordia,
+  Subrahmanyam & Tong, *JAE*, 2014). So "crash-avoider, edge concentrated in stress,
+  partly decayed" is well supported; we attribute the decay to the 1990s onward, not
+  specifically to 2008.
+
+Citations above were verified against primary sources where possible; a few journal
+full texts were paywalled (abstract/venue confirmed only). Section 9 will carry the
+exact references and reproduce the Deflated Sharpe math on our own numbers.
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for Sections 4-9 (triple-barrier labels, features,

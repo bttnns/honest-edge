@@ -53,7 +53,7 @@ uv run jupyter lab              # open the notebooks/ folder and run top to bott
 To re-run a notebook headless and regenerate its charts:
 
 ```bash
-jupyter nbconvert --to notebook --execute --inplace notebooks/00-setup-and-data.ipynb
+uv run jupyter nbconvert --to notebook --execute --inplace notebooks/00-setup-and-data.ipynb
 ```
 
 Section 7 uses Apple's MLX and only runs on Apple silicon; install it with `pip install -e ".[mlx]"`. Every other section runs anywhere.
