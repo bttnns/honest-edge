@@ -46,10 +46,8 @@ Requires Python 3.12+.
 ```bash
 git clone https://github.com/bttnns/honest-edge.git
 cd honest-edge
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .          # installs deps and makes `honest_edge` importable
-jupyter lab              # open the notebooks/ folder and run top to bottom
+uv sync
+uv run jupyter lab              # open the notebooks/ folder and run top to bottom
 ```
 
 To re-run a notebook headless and regenerate its charts:
