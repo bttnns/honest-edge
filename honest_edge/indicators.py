@@ -65,3 +65,15 @@ def bollinger_pct(close: pd.Series, length: int = 20, n_std: float = 2.0) -> pd.
     upper = mid + n_std * sd
     lower = mid - n_std * sd
     return (close - lower) / (upper - lower)
+
+
+def bollinger_width(close: pd.Series, length: int = 20, n_std: float = 2.0) -> pd.Series:
+    """Bollinger band width as a fraction of the mid: (upper - lower) / mid = 2*n_std*sd/mid.
+
+    A volatility gauge: wide bands mean a turbulent regime, narrow bands a calm one.
+    Shares its band definition (same `length`, same `n_std`, population std) with
+    `bollinger_pct`, so '2 sigma' means one thing everywhere. Used as a Section 5 feature.
+    """
+    mid = close.rolling(length).mean()
+    sd = close.rolling(length).std(ddof=0)
+    return (2.0 * n_std * sd) / mid

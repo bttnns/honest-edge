@@ -23,6 +23,10 @@ env/
 # Notebook build scripts (local authoring tools; the .ipynb is the shipped artifact)
 _build_*.py
 
+# Local scratch / scratchpad output (never shipped)
+_scratch_*
+_harv_test.txt
+
 # NOTE: honest_edge/data/ is intentionally NOT ignored. The two SPY CSVs are part
 # of the lessons and are small, so we commit them (and ship them as package data)
 # to keep the repo self-contained.

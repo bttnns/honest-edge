@@ -16,28 +16,11 @@ execute, and verify every number, with an honest verdict at the end (including
 - [x] **1 &middot; Your First ML Loop** , next-day direction is a coin flip (54% = the always-up baseline).
 - [x] **2 &middot; How Backtests Lie** , leakage inflates a score ~5 points; purged walk-forward, costs, and buy-and-hold expose it.
 - [x] **3 &middot; The Signal (Connors RSI-2)** , a real strategy ties buy-and-hold on Sharpe with a quarter of the drawdown, but does not clearly beat it: it takes every dip blindly.
+- [x] **4 &middot; Labeling Trades Right (triple-barrier)** , 2-ATR symmetric barriers with a 5-day limit label each of the 168 dips; base win rate ~64%, the bar Section 6 must beat by being selective. Overlap is mild here (effective ~160 of 168), but the uniqueness machinery is in place.
+- [x] **5 &middot; Features That Describe the Setup** , 14 no-look-ahead features in six themes (trend, momentum, volatility, pullback, oversold, overnight). The honest importance preview: out-of-sample AUC ~0.47 (coin flip), every feature within noise, a faint volatility-cluster hint at best. A hypothesis for Section 6, not a result.
+- [x] **6 &middot; Meta-Labeling with CatBoost** , the crux, and an honest null. Out-of-fold AUC ~0.47 (at/below a coin flip across all folds and 10 seeds), precision lift negative, and filtering cuts trades + drawdown only by trading less (not alpha). No clear edge, exactly as the decayed-anomaly + tiny-sample + little-to-filter evidence predicted. The trustworthy pipeline is the product.
 
 ## Planned
-
-- [ ] **4 &middot; Labeling Trades Right (triple-barrier)**
-  Label every RSI-2 trade the honest way: of three barriers, profit target, stop
-  loss, and a time limit, which is hit first? Barriers are scaled to volatility
-  (ATR). Because trades overlap in time, we add sample-uniqueness weights so
-  near-duplicate trades do not dominate. Output: barriers drawn on real trades,
-  and the win/loss balance the model will learn from.
-
-- [ ] **5 &middot; Features That Describe the Setup**
-  Build the inputs the meta-model sees at each dip, all strictly no-look-ahead:
-  trend regime (distance from the 200-day average), multi-horizon momentum and
-  returns, realized volatility and ATR, Bollinger-band width, pullback depth and
-  days since the last high, and the overnight-versus-intraday return split (SPY's
-  documented overnight effect). Each feature explained, with an importance preview.
-
-- [ ] **6 &middot; Meta-Labeling with CatBoost**
-  Train a CatBoost model to answer one question per signal: take this dip, or skip
-  it? Size positions by the model's confidence, validate with purged walk-forward,
-  and compare net of costs against the raw rule and buy-and-hold. The payoff test:
-  can filtering turn "competitive" into a real edge, or does it just add noise?
 
 - [ ] **7 &middot; A Neural Net (Apple MLX)**
   Swap the tree for a small neural network written natively in Apple's MLX, on the

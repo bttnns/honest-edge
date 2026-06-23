@@ -179,8 +179,9 @@ there is one definition of RSI.
 **SMA (simple moving average).** The rolling average of the last N closes. The
 200-day and 5-day SMAs are the strategy's trend filter and exit.
 
-**ATR (Average True Range).** A volatility gauge in price units (Wilder-smoothed).
-Reserved for scaling the triple-barrier labels in Section 4.
+**ATR (Average True Range).** A volatility gauge in price units (Wilder-smoothed):
+the typical size of a bar's range. Section 4 uses it to set the **triple-barrier**
+widths, so a "win" is equally hard to reach in calm and wild markets.
 
 **Bollinger %B.** Where price sits inside its bands (0 = lower band, 1 = upper).
 Reserved as a feature in Section 5.
@@ -205,11 +206,118 @@ job later is not to replace it but to *filter* it (see **meta-labeling**).
 trades to take, rather than predicting the market itself. The manager who decides
 which of its trades to fund. This is the arc from Section 4 onward.
 
-**Triple-barrier labeling.** Labeling each trade by which of three barriers it hits
-first: a profit target, a stop loss, or a time limit. Section 4.
+**Primary vs secondary model.** The **primary** sets the side (our RSI-2 rule says
+"go long this dip"); it is high-recall, catching every dip but also duds. The
+**secondary** (the ML model) decides take/skip and size; it predicts whether the
+primary is right *this time*, and filters rather than forecasts.
 
-**Sample-uniqueness weights.** Down-weighting trades that overlap in time so
-near-duplicate trades do not dominate training. Section 4.
+**Precision lift.** The honest test for a filter: the win rate of the trades it took
+*minus the base rate* (the win rate of taking every signal). Zero or negative lift
+means the filter added nothing, just as a stock-picker who matches the index has not.
+
+**Gradient-boosted trees.** A model built from many shallow trees in sequence, each one
+correcting the errors the running ensemble still makes. A relay team of weak rules of
+thumb, versus a single deep tree (which overfits) or a random forest (which averages
+independent trees).
+
+**CatBoost.** The gradient-boosting library used in Section 6. Strong defaults, and an
+anti-leakage training scheme (**ordered boosting**) that fits the course's theme.
+
+**Ordered boosting.** CatBoost's fix for *prediction shift*: in ordinary boosting a
+row's own label leaks into the error signal used to score it (the same sin as
+**look-ahead**). Ordered boosting shuffles the rows into an artificial timeline and
+scores each row using only the rows before it, the no-look-ahead rule, internalized.
+
+**Bet sizing.** Setting the position size by the model's confidence instead of
+all-or-nothing: a dimmer switch, not a light switch. Section 6 uses de Prado's sizer,
+`size = 2*Phi(z) - 1`, which stays timid near a coin flip and firm only on real
+conviction.
+
+**Triple-barrier labeling.** Labeling each trade by which of three barriers it hits
+first: a profit target (upper), a stop loss (lower), or a time limit (vertical). The
+two horizontal barriers are scaled to **ATR**, so the label means the same thing in
+every volatility regime. Section 4.
+
+**Vertical barrier (time limit).** The "do not hold forever" barrier: if neither the
+profit nor stop barrier is touched within `max_hold` bars, the trade is closed and
+labeled by the sign of its return. Without it, a label would secretly measure
+long-run market drift instead of the trade.
+
+**Meta-label.** The binary {0, 1} target the meta-model learns: 1 = "take this dip"
+(the trade ended in the green), 0 = "skip it" (it ended in the red). Possible only
+because the **primary signal** already fixed the side of the bet (here, always long).
+
+**Base win rate.** The share of the primary signal's trades that win if you take them
+all (~64% for the RSI-2 dips). It is free, so **meta-labeling** only earns its keep
+if it lifts the win rate *among the trades it chooses to take* above this bar.
+
+**Concurrency.** How many trades are "alive" (between entry and barrier touch) on a
+given bar. Above 1 means trades overlap in time.
+
+**Sample-uniqueness weights.** Because overlapping trades share future bars, they are
+partly the same observation counted twice. A trade's **average uniqueness** is the
+mean of 1/**concurrency** over its life (1.0 if it never overlaps, ~0.5 if it shares
+every bar). Summing these gives the **effective sample size**, the honest count of
+independent trades, always at most the raw count.
+
+**Return-attribution weight.** The full Section 4 sample weight: each bar's return is
+split across the trades alive on it (so no day is double-counted), summed over a
+trade's life, and its size taken. It rewards trades driven by big, decisive moves and
+down-weights redundant, low-information ones. Fed to the model as `sample_weight`.
+
+## Features and importance (Section 5)
+
+**Feature theme.** A group of features that measure the same economic idea (trend,
+momentum, volatility, pullback, oversold, overnight). Within a theme, features tend to
+be near-duplicates, which matters for importance (see **substitution effect**).
+
+**Realized volatility.** The standard deviation of recent daily returns, annualized.
+One of three volatility gauges in Section 5, alongside **ATR** and **Bollinger width**.
+
+**Bollinger width (BandWidth).** How wide the Bollinger bands are relative to their
+middle: (upper &minus; lower) / middle. A normalized measure of how stormy the tape is.
+Distinct from **Bollinger %B**, which is *where* price sits inside the bands.
+
+**Short-term reversal.** The tendency of a sharp recent drop to bounce back (Jegadeesh,
+1990). Why a more negative recent return can mean a *better* dip-buy.
+
+**Momentum (intermediate-term).** The tendency of 6-to-12-month winners to keep winning
+(Jegadeesh & Titman, 1993). The opposite-signed cousin of **short-term reversal**.
+
+**Overnight effect.** The documented fact that almost all of SPY's long-run return has
+historically accrued **overnight** (close to open), while the intraday session (open to
+close) was roughly flat. Used in Section 5 as a regime feature, not a tradeable claim.
+
+**Collinearity (multicollinearity).** When features carry overlapping information (the
+three volatility gauges). It does not hurt a tree's *predictions*, but it scrambles its
+*importance* attribution (see **substitution effect**).
+
+**Substitution effect.** When two features say the same thing, a model leans on either
+one, so the credit (importance) gets split between them and each looks less important
+than the idea really is. The fix: read importance by **cluster**, not by single feature.
+
+**MDI (mean decrease impurity / Gini importance).** A tree's built-in importance,
+computed in-sample. Fast but biased: it flatters high-cardinality features and can
+reward overfitting. Not used as the headline here.
+
+**Permutation importance (MDA, mean decrease accuracy).** The honest importance: shuffle
+one feature's column on held-out data and measure how much the score drops. Out-of-sample
+and model-agnostic. Its own weakness is **collinearity** (permuting one twin barely hurts
+because the other still carries the signal).
+
+**AUC (area under the ROC curve).** How well a model *ranks* winners above losers, from
+0.5 (a coin flip) to 1.0 (perfect). Section 5's importance preview lands near 0.5: on
+~165 trades the features do not reliably rank the winning dips.
+
+**Multiple testing.** Running many trials inflates the best result even when nothing
+has a real edge: try enough strategies and one looks great by chance. Every variant
+this course tried (RSI thresholds, barrier widths, features, the model, the sizer) is
+a trial the **Deflated Sharpe ratio** must charge for.
+
+**Selection bias (cherry-picking).** Scanning many candidates (stocks, thresholds,
+configurations) and keeping the best-looking one. On noisy data the "winner" is usually
+luck, not skill, and it regresses to the mean out of sample, which is why one flattering
+backtest, picked from many tries, proves little. See **multiple testing**.
 
 **Deflated Sharpe ratio.** A **Sharpe** corrected for the fact that trying many
 variants inflates the best one by luck. The honesty check in Section 9.

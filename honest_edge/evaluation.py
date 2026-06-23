@@ -19,7 +19,8 @@ import pandas as pd
 # --------------------------------------------------------------------------
 # Time-respecting cross-validation
 # --------------------------------------------------------------------------
-def purged_walk_forward(n, n_splits=5, embargo_frac=0.02, label_horizon=1):
+def purged_walk_forward(n, n_splits=5, embargo_frac=0.02, label_horizon=1,
+                        event_times=None, event_t1=None):
     """Expanding-window walk-forward split with purging and an embargo.
 
     Train on the past, test on the next contiguous block, roll forward. Two
@@ -30,12 +31,24 @@ def purged_walk_forward(n, n_splits=5, embargo_frac=0.02, label_horizon=1):
       - EMBARGO: drop a small extra buffer (embargo_frac of all rows) just before
         each test block, to kill leakage through autocorrelation.
 
+    The row-based purge above assumes a fixed, contiguous label horizon (the dense
+    daily-bar case of Section 2). For the SPARSE, variable-horizon labels of Sections
+    5-6 (one row per dip, each label spanning up to max_hold trading days), pass the
+    per-row entry dates `event_times` and label-end dates `event_t1`: a DATE-AWARE
+    purge then additionally drops any training row whose label actually ends on or
+    after the test block's first entry, the only rows that truly leak. This is purely
+    additive (it never re-adds a row the row-based gap already cut), so on widely
+    spaced dips it changes nothing, and on a dense cluster it removes the real leak the
+    row count would miss.
+
     Parameters
     ----------
     n : int                length of the dataset (number of rows)
     n_splits : int         number of test folds
     embargo_frac : float   embargo size as a fraction of n (0.02 of ~5000 daily bars is ~100 bars, a few months)
     label_horizon : int    how many bars forward the label looks (1 for next-bar)
+    event_times : index-like or None   per-row entry dates, aligned to row order (for the date-aware purge)
+    event_t1 : index-like or None      per-row label-end dates, aligned to row order (for the date-aware purge)
 
     Returns
     -------
@@ -45,6 +58,8 @@ def purged_walk_forward(n, n_splits=5, embargo_frac=0.02, label_horizon=1):
     train (only happens on very short series).
     """
     embargo = int(embargo_frac * n)
+    et = pd.DatetimeIndex(event_times) if event_times is not None else None
+    e1 = pd.DatetimeIndex(event_t1) if event_t1 is not None else None
     # Split all rows into n_splits+1 contiguous blocks; the first is train-only,
     # the remaining n_splits blocks are each used once as a test set.
     blocks = np.array_split(np.arange(n), n_splits + 1)
@@ -58,6 +73,13 @@ def purged_walk_forward(n, n_splits=5, embargo_frac=0.02, label_horizon=1):
         if train_hi <= 0:
             continue
         train_idx = np.arange(0, train_hi)
+        if et is not None and e1 is not None:
+            # Date-aware purge: keep only train rows whose label ENDS strictly before
+            # the test block's first entry. NaT (e.g. censored) compares False and is dropped.
+            test_start = et[test_idx[0]]
+            train_idx = train_idx[e1[train_idx] < test_start]
+        if len(train_idx) == 0:
+            continue
         folds.append((train_idx, test_idx))
     return folds
 
@@ -112,6 +134,24 @@ def backtest_positions(positions, close, cost_bps=2.0):
 def buy_and_hold(close):
     """Always-long per-bar returns: the headline baseline every strategy must beat."""
     return close.pct_change().fillna(0.0)
+
+
+def bet_size(proba, n_classes=2):
+    """Turn a classifier's probability into a bet size, the de Prado way (Ch. 10).
+
+    Instead of betting all-or-nothing, size the bet by how far the probability sits
+    above a coin flip. We form a test statistic z = (p - 1/K) / sqrt(p(1-p)) (how many
+    standard deviations the confidence is above random, K = number of classes), then
+    pass it through the normal CDF: size = 2*Phi(z) - 1, which runs from 0 at p = 1/K
+    to 1 as p -> 1. The curve is deliberately timid near a coin flip (small bets when
+    unsure) and firmer only as real conviction builds: a dimmer switch, not an on/off
+    light. Returns a size in [-1, 1]; a long-only caller clips to [0, 1].
+    """
+    from scipy.stats import norm
+
+    p = np.clip(np.asarray(proba, dtype=float), 1e-6, 1 - 1e-6)
+    z = (p - 1.0 / n_classes) / np.sqrt(p * (1 - p))
+    return 2 * norm.cdf(z) - 1
 
 
 def random_positions(index, seed=0, long_only=True):

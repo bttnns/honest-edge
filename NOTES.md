@@ -94,6 +94,202 @@ the shipped SPY data (daily, 2006-2026, ~5000 bars).
   wash out out-of-sample.
 - The gap (it takes *every* dip blindly) is the hinge into meta-labeling.
 
+## Section 4: labeling trades right (triple-barrier)
+
+- Goal: build the honest answer key (the `y`) the Section 6 meta-model will learn,
+  for each of the **168 distinct dips** (not the 280-bar mask, not the 150 state-
+  machine round-trips: we label distinct dips so overlapping near-duplicate labels
+  do not double-count, as the Section 3 docstring warned).
+- **The method.** Triple barrier (de Prado, *AFML* 2018, Ch. 3): upper = entry +
+  k&middot;ATR (profit-take), lower = entry &minus; k&middot;ATR (stop), vertical =
+  `max_hold` bars (time limit). Label = whichever is touched first. Touches are read
+  on the **close path**, consistent with the course's close-to-close engine, which
+  also means a single close can never breach both horizontal barriers, so there is
+  no intrabar tie to resolve.
+- **Why ATR, not fixed %.** Barriers scaled to volatility mean a "win" is equally
+  hard to reach in every regime. We use ATR (price units, drawable on the chart)
+  rather than de Prado's EWM-return vol; on SPY the two are interchangeable
+  (ATR-as-fraction-of-price runs ~0.92&times; the daily return std, matching the
+  literature's ~0.875 range bridge).
+- **Meta-label.** Because the primary signal fixes the side (always long), the label
+  collapses to binary {0,1}: 1 = ended green (profit-take, or an up-drift timeout),
+  0 = ended red (stop, or a down-drift timeout). A profit-take is always 1, a stop
+  always 0; only the time-limit case is decided by the sign of the realized return.
+- **Chosen a priori, not tuned.** Symmetric **k = 2 ATR**, **5-day** limit (the
+  rule's natural hold is ~3 bars, exit on SMA(5); 83% of round-trips close within 5
+  bars). Picking barriers to maximize the backtest would leak the test set into the
+  labels, so we fix them from convention and only *report* sensitivity.
+- **Results (2 ATR, 5 days).** 45 profit-takes (27%), 24 stops (14%), 99 time-outs
+  (59%); ~41% of dips decided by a real price barrier. **Base win rate 64.3%.** This
+  is the bar Section 6 must beat *by being selective*: the 64% is free (take every
+  dip), so the model only earns its keep if its taken-trade win rate climbs above it.
+- **Sensitivity.** Win rate is stable in the low-to-mid 60s across k in {1.5, 2, 2.5}
+  and hold in {5, 10}; what moves is the win/loss/time mix (wider/longer barriers
+  convert time-outs into real touches). So the answer key is not an artifact of one
+  lucky setting.
+- **Overlap / sample weights (Ch. 4).** Labels span [t0, t1] and overlap when dips
+  cluster, violating IID. Max concurrency is only **2**, and just ~5% of active bars
+  overlap, so the effective sample is **~160 of 168** (mean uniqueness 0.955): a
+  *gentle* haircut on THIS strategy because dips sit ~17 trading days apart. We say
+  so plainly, and include a 3-trade toy example to show the mechanism would bite hard
+  on a signal that fires daily or holds for weeks. Return-attribution weights
+  (uniqueness &times; |move|, normalized to mean 1, range here 0.01 to 4.30) are
+  computed and reserved as `sample_weight` for Section 6.
+- **No-look-ahead.** ATR sized from the entry close; first-touch walks forward from
+  t0+1; trades whose full window would run past the data are right-censored and
+  dropped (none were, here). Library: `honest_edge/labeling.py`.
+
+## Section 5: features that describe the setup
+
+- Goal: build the `X` (the model's inputs) to go with Section 4's `y` and weights.
+  **14 features in six themes**, all strictly no-look-ahead (value at dip `t` uses
+  data &le; `t`'s close; trailing windows only; no full-sample normalization). Trees
+  do not need scaling, so we do none. Library: `honest_edge/features.py`.
+  - **trend:** `dist200` (close/SMA200 &minus; 1). Sign deliberately left ambiguous
+    (healthy-uptrend vs overextended; weak at the 200-day horizon, Alajbeg 2017).
+  - **momentum:** `ret_5/21/63/252`. Short = reversal (negative sign, Jegadeesh 1990),
+    long = momentum (positive, Jegadeesh & Titman 1993). The ideal setup is a sharp
+    short drop inside a strong long uptrend, which is what RSI-2 buys.
+  - **volatility:** `rv_21`, `atr_pct`, `bb_width`, three proxies for one thing, on
+    purpose (to teach collinearity). Reversal pays more in stress (Nagel 2012), so a
+    positive-but-conditional sign.
+  - **pullback:** `pullback_63`, `days_since_high_63`. Non-monotone (moderate dips
+    bounce, deep slides are knives).
+  - **oversold:** `rsi2` (lower = deeper = better), `gap5` (stretch below SMA5 exit).
+  - **overnight:** `overnight_21`, `on_minus_id_21` (overnight minus intraday, the
+    "tug of war"). Hook: ~all of SPY's 30-year return accrued overnight, intraday flat
+    (Cooper-Cliff-Gulen 2008; Lou-Polk-Skouras 2019); the overnight bounce is stronger
+    after weak days. Used as a regime/character feature, NOT a tradeable claim (decayed,
+    costly to harvest at the open/close auctions).
+- **Warm-up.** 3 of 168 early dips lack a full 252-day history, so their year-return is
+  NaN; we DROP them (no imputation, which would leak) &rarr; **165 usable dips**, win
+  rate still 64.3%.
+- **Collinearity is real and shown.** Spearman heatmap + Ward dendrogram on 1&minus;|corr|
+  expose the volatility trio (rv&harr;atr 0.90, rv&harr;bb 0.71) and the momentum block
+  as near-duplicates. This breaks single-feature importance (the substitution effect,
+  de Prado Ch. 8): credit splits between twins. Remedy stated: read importance by
+  cluster, not by column.
+- **Importance preview, honest.** Permutation importance (MDA), out-of-sample on the
+  library's purged walk-forward, weighted by Section 4 weights, averaged over folds and
+  8 seeds, with error bars. Result: **OOS AUC ~0.467 (below a coin flip)**; every
+  feature's error bar crosses zero; the volatility cluster edges ahead (consistent with
+  Nagel) but is unconfirmable. Cross-check: a purged 5-fold gave AUC ~0.40 and put
+  *momentum* on top instead, so the ranking is unstable across CV schemes. Framed
+  explicitly as a hypothesis generator for Section 6, not a result. Matches the NOTES
+  prediction that small-sample importance is high-variance.
+- **Implication for Section 6.** Temper expectations: out of sample the features barely
+  move the needle. CatBoost gets the best honest shot, but "no edge after honest
+  validation" remains a live, on-brand outcome.
+
+## Section 6: meta-labeling with CatBoost (the crux, and an honest null)
+
+- Goal: train the secondary model to decide take/skip per dip, size by confidence,
+  validate honestly, and compare to the raw rule and buy-and-hold. New library code:
+  `signal.filtered_positions` (the gated state machine; reproduces `connors_rsi2` bar
+  for bar when every dip is approved at size 1) and `evaluation.bet_size` (de Prado's
+  `2*Phi(z)-1` sizer).
+- **Concept framing.** Meta-labeling = primary sets the side (high recall), secondary
+  filters for precision; the secondary predicts whether the primary is right THIS time,
+  it does not forecast the market. It refines an edge, cannot create one ("a great
+  manager can't fix a bad business"; garbage in, garbage out). Analogies used: scout +
+  GM, screening + confirmatory test, dimmer switch (sizing), sommelier (AUC = ranking).
+- **CatBoost tie-in (on-theme).** Gradient boosting = a relay team of weak trees each
+  patching the last's errors. CatBoost's "prediction shift" (a row's own label leaking
+  into its own residual) is the SAME sin as look-ahead; "ordered boosting" fixes it by
+  scoring each row using only rows before it in a shuffled order: the no-look-ahead rule
+  internalized. Honest caveat stated: with 14 numeric features and a small sample it
+  buys little, and on CPU it's off by default (we set `boosting_type='Ordered'`); the
+  real safeguard is still our own purged walk-forward.
+- **Config: fixed and conservative, deliberately NOT tuned** (tuning ~130-row folds is
+  how you fool yourself, and each trial is charged in Section 9): depth 3, iterations
+  300, lr 0.03, l2_leaf_reg 6, rsm 0.8, Logloss, Ordered, Section-4 sample weights, no
+  class weighting (64/36 is mild; reweighting distorts the probabilities sizing needs).
+- **Honest backtest design.** Out-of-fold probabilities via purged walk-forward (5
+  splits); the first block is train-only so the eval window starts ~2012-05 (137 of 165
+  dips). Window-matched comparison: raw rule and B&H sliced to the same window. NOTE the
+  window EXCLUDES 2008-09 (the rule's best period) because scoring those dips with a
+  model trained on them would be cheating; this is unflattering and we keep it.
+- **Result: no edge.** Overall OOF AUC **0.466**; per-fold AUC swings **0.33 to 0.61**
+  (small-sample noise); precision lift @0.5 **negative** (took 52/137, taken win rate
+  0.654 vs base 0.679; recall 0.366, it skipped 59 winners to dodge 26 losers). Backtest
+  (2012-2026, 2 bp): raw Sharpe **0.68** / DD -11% / 122 trades / 12% exposure; filter
+  @0.5 Sharpe **0.39** / DD -7% / 48 trades / 5%; sized Sharpe **0.15**; B&H Sharpe 0.75
+  / DD -34%. The filter cut trades + drawdown only by trading less (not alpha) and gave
+  up return and Sharpe. Seed sweep (10 seeds): AUC **0.38-0.47, all <=0.5**; precision
+  lift **negative in every seed**. The null is robust, not a single unlucky draw.
+- **Why a null was expected, and is a real finding.** Little to filter (primary is
+  mostly the trend filter), decayed reversal anomaly, ~165 trades is below the floor for
+  reliable ML learning, coin-flip Section 5 features. Mirrors the one published
+  mean-reversion meta-labeling test (Hudson & Thames), whose precision gain collapsed OOS
+  (+0.18 validation -> +0.03 live). We pre-registered what success would look like
+  (taken win rate clearly above base, consistent across folds/seeds, fewer trades + lower
+  DD, surviving the Section 9 haircut) and failed it honestly. The product is the
+  trustworthy pipeline, not a money printer.
+
+## Reader questions, distilled (scratchpad for Section 9)
+
+A long Q&A while finishing Section 6 stress-tested the null from every angle a hopeful
+researcher would try. None rescued it, and the reasons ARE Section 9's curriculum
+(multiple testing, the Deflated Sharpe), so they are parked here.
+
+- **"Sharpe fell 0.68 -> 0.39, how do you bring it back up?"** First the reframe: 0.68 was
+  the RAW RULE; the model dragged it down, so the literal fix is "stop filtering". You
+  cannot tune the filter back up honestly, because its out-of-fold AUC is ~0.47 (no
+  ranking ability) and a threshold or sizer only redistributes a signal that already
+  ranks. The levers, sorted:
+  - Honest and real: a better PRIMARY signal (meta-labeling refines, it cannot create, an
+    edge), or genuinely MORE INDEPENDENT DATA (the binding constraint is ~165 trades).
+  - Not levers (they add no information, only overfit, and each is a "trial" Section 9
+    charges for): hyperparameter tuning, moving the barriers/threshold/seed to fit the
+    backtest, more features on the same tiny sample, and cherry-picking.
+- **"Synthetic data of what we want the model to learn?"** Circular: assumption in,
+  assumption out. You cannot create information by modeling data you already have; a
+  generator inherits its source's (decayed) structure plus its own error. Image-style
+  augmentation works only because we know label-preserving invariances (a rotated cat is
+  still a cat); markets have none. Synthetic data is legitimately for STRESS-TESTING an
+  edge (Monte-Carlo / block-bootstrap of many alternate histories), never for making one.
+- **"Just a crazy stock like TSLA, maybe different features?"** Backwards on the data
+  problem: TSLA has FEWER trades (111) than SPY (165), and the wildest names (COIN 29,
+  MRNA 46) have too few to even validate. Per-stock out-of-fold AUCs scattered 0.37 to
+  0.60 (median 0.48); picking the best-looking one (PFE 0.60) after the fact is selecting
+  NOISE, the cherry-picking trap. "Different features" is right in spirit (single names
+  have idiosyncratic drivers) but MORE features on FEWER samples is the overfitting curse,
+  and the biggest single-stock moves are news, which no price feature predicts.
+- **"Not all stocks are the same?"** Correct, and it exposes pooling's hidden assumption.
+  Complete pooling (one model for all names) assumes sameness; no pooling (one model per
+  stock) returns to the small-sample wall; the middle is PARTIAL POOLING (give the model a
+  "what kind of stock" feature, or pool only similar names). The catch: every way of
+  respecting the differences spends back the samples that pooling just bought.
+- **"It's a coin flip but with more data, isn't that an edge?"** A real tiny edge,
+  repeated and sized, IS the whole game (casinos, market makers). But a MEASURED coin flip
+  is not a tiny edge: on a small sample you cannot distinguish a true 51% from a true 50%,
+  which is precisely the problem. Confirming a 1-point edge needs on the order of tens of
+  thousands of independent bets; we have ~670 effective. More data MEASURES an edge, it
+  does not create one, and ours measured ~0.50.
+- **"But you said 68!"** The course's central reflex: 64-68% was the BASE RATE (the win
+  rate of taking EVERY dip, free), not the model's skill; the model had to BEAT it (the
+  precision LIFT) and did not (lift ~0 to negative). And a high win rate is not profit:
+  no-stop mean reversion is built to win often and small, then lose rarely and big, which
+  is why we judge Sharpe and total return, not win rate.
+
+### Cross-sectional experiment (standalone sandbox, NOT shipped in the course)
+
+`~/Dev/tendieRS/cross_sectional_rsi2.py` runs the identical honest_edge pipeline across 25
+daily equity names and pools the dips, to test whether more samples change the verdict.
+Run it with the honest-edge env (`uv run --project ~/Dev/honest-edge python ...`).
+
+- Raw dips **2,823**, but EFFECTIVE (cross-sectional uniqueness; names dip together) only
+  **~671**, a ~4x deflation: the Section 4 concurrency idea applied across a panel.
+- Out-of-fold AUC went from SPY-alone's noisy **0.42** (per-fold 0.29-0.51) to a steady
+  **0.50** (per-fold 0.46-0.56); precision lift ~0. More data did not lift the answer, it
+  SHARPENED it into a confident "no edge". The cleanest illustration of the course thesis:
+  more data confirms or denies an edge, it does not invent one.
+- Bonus: the library generalized to 25 wildly different names (sleepy XOM to feral COIN)
+  unchanged. The vol-scaled (ATR) barriers and uniqueness weights are exactly what make
+  dips comparable across a heterogeneous panel.
+- Caveat: the universe is hand-picked SURVIVORS, not point-in-time, so even a positive
+  result would have been suspect (Section 0).
+
 ## Metric caveats
 
 - `perf_metrics` `hit_rate` is measured over **active bars** (non-zero P&L) and is

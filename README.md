@@ -20,9 +20,9 @@ Each section is one self-contained, executed notebook in `notebooks/`. It reads 
 | 1 | `01-your-first-ml-loop` | The ML loop; why next-day direction is a coin flip | ready |
 | 2 | `02-how-backtests-lie` | Leakage, purged walk-forward, costs, baselines | ready |
 | 3 | `03-the-signal-connors-rsi2` | A real strategy vs buy-and-hold, measured honestly | ready |
-| 4 | `04-labeling-trades-right` | Triple-barrier labels: profit, stop, or time? | coming |
-| 5 | `05-features-that-describe-the-setup` | Features that describe each trade | coming |
-| 6 | `06-meta-labeling-catboost` | ML decides *which* signals to take | coming |
+| 4 | `04-labeling-trades-right` | Triple-barrier labels: profit, stop, or time? | ready |
+| 5 | `05-features-that-describe-the-setup` | Features that describe each trade | ready |
+| 6 | `06-meta-labeling-catboost` | ML decides *which* signals to take | ready |
 | 7 | `07-a-neural-net-mlx` | A neural net (Apple MLX) vs the tree | coming |
 | 8 | `08-hourly-confirmation` | Does an intraday read sharpen entries? | coming |
 | 9 | `09-the-honest-verdict` | Deflated Sharpe; the final, honest answer | coming |
@@ -65,7 +65,9 @@ honest-edge/
 ├── honest_edge/        the reusable library (imported by every notebook)
 │   ├── data.py         load SPY, cleanly and the same way every time
 │   ├── indicators.py   RSI, moving averages, ATR, Bollinger %B (no look-ahead)
-│   ├── signal.py       the Connors RSI-2 primary signal
+│   ├── signal.py       the Connors RSI-2 primary signal (raw and meta-filtered positions)
+│   ├── labeling.py     triple-barrier meta-labels and overlap-aware sample weights
+│   ├── features.py     the no-look-ahead features describing each dip (Section 5)
 │   ├── evaluation.py   purged walk-forward, cost-aware backtest, metrics, baselines
 │   └── data/           SPY daily (2006-2026) and hourly (2023-2026) CSVs, shipped with the package
 ├── notebooks/          the course, one executed notebook per section
